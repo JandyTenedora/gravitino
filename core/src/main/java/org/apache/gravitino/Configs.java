@@ -188,6 +188,7 @@ public class Configs {
   public static final long DEFAULT_ENTITY_CHANGE_LOG_POLL_INTERVAL_SECS = 3L;
   public static final long DEFAULT_ENTITY_CHANGE_LOG_RETENTION_SECS = 24 * 60 * 60L;
   public static final long DEFAULT_ENTITY_CHANGE_LOG_CLEANUP_INTERVAL_SECS = 60 * 60L;
+  public static final long DEFAULT_ENTITY_CHANGE_LOG_POLL_LAG_SECS = 1L;
 
   public static final ConfigEntry<Long> ENTITY_CHANGE_LOG_POLL_INTERVAL_SECS =
       new ConfigBuilder("gravitino.entityChangeLog.pollIntervalSecs")
@@ -212,6 +213,20 @@ public class Configs {
           .longConf()
           .checkValue(value -> value > 0, ConfigConstants.POSITIVE_NUMBER_ERROR_MSG)
           .createWithDefault(DEFAULT_ENTITY_CHANGE_LOG_CLEANUP_INTERVAL_SECS);
+
+  public static final ConfigEntry<Long> ENTITY_CHANGE_LOG_POLL_LAG_SECS =
+      new ConfigBuilder("gravitino.entityChangeLog.pollLagSecs")
+          .doc(
+              "The lag in seconds applied to the entity change log poller. The poller only consumes"
+                  + " change rows older than this lag (measured by the database clock), so all"
+                  + " transactions that started before a consumed row have already committed. This"
+                  + " closes the auto-increment id commit-ordering gap where a lower id may commit"
+                  + " after a higher id. The value should exceed the longest expected write"
+                  + " transaction duration. Set 0 to disable the lag.")
+          .version(ConfigConstants.VERSION_1_4_0)
+          .longConf()
+          .checkValue(value -> value >= 0, ConfigConstants.NON_NEGATIVE_NUMBER_ERROR_MSG)
+          .createWithDefault(DEFAULT_ENTITY_CHANGE_LOG_POLL_LAG_SECS);
 
   public static final ConfigEntry<Boolean> CATALOG_LOAD_ISOLATED =
       new ConfigBuilder("gravitino.catalog.classloader.isolated")

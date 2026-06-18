@@ -103,7 +103,8 @@ public class RelationalEntityStore
         new EntityChangeLogPoller(
             config.get(Configs.ENTITY_CHANGE_LOG_POLL_INTERVAL_SECS),
             TimeUnit.SECONDS.toMillis(config.get(Configs.ENTITY_CHANGE_LOG_RETENTION_SECS)),
-            TimeUnit.SECONDS.toMillis(config.get(Configs.ENTITY_CHANGE_LOG_CLEANUP_INTERVAL_SECS)));
+            TimeUnit.SECONDS.toMillis(config.get(Configs.ENTITY_CHANGE_LOG_CLEANUP_INTERVAL_SECS)),
+            TimeUnit.SECONDS.toMillis(config.get(Configs.ENTITY_CHANGE_LOG_POLL_LAG_SECS)));
     this.entityChangeLogPoller.start();
   }
 

@@ -20,6 +20,7 @@ package org.apache.gravitino.storage.relational;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.mockStatic;
 import static org.mockito.Mockito.never;
@@ -29,6 +30,7 @@ import static org.mockito.Mockito.when;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.function.Consumer;
 import java.util.function.Function;
 import org.apache.gravitino.storage.relational.mapper.EntityChangeLogMapper;
@@ -48,12 +50,21 @@ public class TestEntityChangeLogPoller {
   }
 
   @Test
+  void testRejectsNegativePollLag() {
+    Assertions.assertThrows(
+        IllegalArgumentException.class,
+        () ->
+            new EntityChangeLogPoller(
+                1, TimeUnit.DAYS.toMillis(1), TimeUnit.HOURS.toMillis(1), -1L));
+  }
+
+  @Test
   void testPollChangesDispatchesSameBatchToAllListenersAndAdvancesCursor() {
     EntityChangeLogMapper mapper = mock(EntityChangeLogMapper.class);
     EntityChangeRecord first = change(1L, "CATALOG", "ml1.cat1");
     EntityChangeRecord second = change(2L, "SCHEMA", "ml1.cat1.sch1");
-    when(mapper.selectEntityChanges(0L, 500)).thenReturn(List.of(first, second));
-    when(mapper.selectEntityChanges(2L, 500)).thenReturn(List.of());
+    when(mapper.selectEntityChanges(eq(0L), anyLong(), eq(500))).thenReturn(List.of(first, second));
+    when(mapper.selectEntityChanges(eq(2L), anyLong(), eq(500))).thenReturn(List.of());
 
     List<EntityChangeRecord> firstListenerRecords = new ArrayList<>();
     List<EntityChangeRecord> secondListenerRecords = new ArrayList<>();
@@ -80,11 +91,12 @@ public class TestEntityChangeLogPoller {
   }
 
   @Test
-  void testListenerFailureDoesNotBlockOtherListenersAndCursorStillAdvances() {
+  void testListenerFailureDoesNotBlockOthersAndKeepsCursorForRetry() {
     EntityChangeLogMapper mapper = mock(EntityChangeLogMapper.class);
     EntityChangeRecord change = change(1L, "CATALOG", "ml1.cat1");
-    when(mapper.selectEntityChanges(0L, 500)).thenReturn(List.of(change));
-    when(mapper.selectEntityChanges(1L, 500)).thenReturn(List.of());
+    // The cursor must not advance past a batch that any listener failed to apply, so the same
+    // batch is re-fetched from id 0 on every cycle until the failing listener recovers.
+    when(mapper.selectEntityChanges(eq(0L), anyLong(), eq(500))).thenReturn(List.of(change));
 
     List<EntityChangeRecord> received = new ArrayList<>();
 
@@ -108,13 +120,53 @@ public class TestEntityChangeLogPoller {
       poller.pollChanges();
     }
 
-    Assertions.assertEquals(List.of(change), received);
+    // Healthy listener is never blocked by the failing one, and the un-advanced cursor causes the
+    // batch to be redispatched on the second cycle.
+    Assertions.assertEquals(List.of(change, change), received);
+    verify(mapper, never()).selectEntityChanges(eq(1L), anyLong(), eq(500));
+  }
+
+  @Test
+  void testCursorAdvancesOnceFailingListenerRecovers() {
+    EntityChangeLogMapper mapper = mock(EntityChangeLogMapper.class);
+    EntityChangeRecord change = change(1L, "CATALOG", "ml1.cat1");
+    when(mapper.selectEntityChanges(eq(0L), anyLong(), eq(500))).thenReturn(List.of(change));
+    when(mapper.selectEntityChanges(eq(1L), anyLong(), eq(500))).thenReturn(List.of());
+
+    AtomicInteger attempts = new AtomicInteger();
+
+    try (MockedStatic<SessionUtils> sessionUtils = mockStatic(SessionUtils.class)) {
+      sessionUtils
+          .when(() -> SessionUtils.getWithoutCommit(any(), any()))
+          .thenAnswer(
+              invocation -> {
+                Function<Object, Object> func = invocation.getArgument(1);
+                return func.apply(mapper);
+              });
+
+      EntityChangeLogPoller poller = new EntityChangeLogPoller(1);
+      poller.registerListener(
+          changes -> {
+            if (attempts.getAndIncrement() == 0) {
+              throw new RuntimeException("transient listener failure");
+            }
+          });
+
+      // First cycle fails -> cursor stays at 0. Second cycle succeeds -> cursor advances to 1.
+      // Third cycle then fetches from the advanced cursor.
+      poller.pollChanges();
+      poller.pollChanges();
+      poller.pollChanges();
+    }
+
+    verify(mapper).selectEntityChanges(eq(1L), anyLong(), eq(500));
   }
 
   @Test
   void testPollChangesCatchesFetchFailures() {
     EntityChangeLogMapper mapper = mock(EntityChangeLogMapper.class);
-    when(mapper.selectEntityChanges(0L, 500)).thenThrow(new RuntimeException("db failed"));
+    when(mapper.selectEntityChanges(eq(0L), anyLong(), eq(500)))
+        .thenThrow(new RuntimeException("db failed"));
 
     try (MockedStatic<SessionUtils> sessionUtils = mockStatic(SessionUtils.class)) {
       sessionUtils
@@ -136,7 +188,8 @@ public class TestEntityChangeLogPoller {
     EntityChangeLogMapper mapper = mock(EntityChangeLogMapper.class);
     EntityChangeRecord first = change(1L, "CATALOG", "ml1.cat1");
     EntityChangeRecord second = change(2L, "SCHEMA", "ml1.cat1.sch1");
-    when(mapper.selectEntityChanges(0L, 500)).thenReturn(new ArrayList<>(List.of(first, second)));
+    when(mapper.selectEntityChanges(eq(0L), anyLong(), eq(500)))
+        .thenReturn(new ArrayList<>(List.of(first, second)));
 
     List<EntityChangeRecord> received = new ArrayList<>();
 
@@ -166,14 +219,14 @@ public class TestEntityChangeLogPoller {
   @Test
   void testPrunesExpiredChangesAfterCleanupInterval() {
     EntityChangeLogMapper mapper = mock(EntityChangeLogMapper.class);
-    when(mapper.selectEntityChanges(0L, 500)).thenReturn(List.of());
+    when(mapper.selectEntityChanges(eq(0L), anyLong(), eq(500))).thenReturn(List.of());
 
     try (MockedStatic<SessionUtils> sessionUtils = mockStatic(SessionUtils.class)) {
       mockSessionUtils(sessionUtils, mapper);
 
       EntityChangeLogPoller poller =
           new EntityChangeLogPoller(
-              1, TimeUnit.DAYS.toMillis(1), TimeUnit.HOURS.toMillis(1), () -> 100_000_000L);
+              1, TimeUnit.DAYS.toMillis(1), TimeUnit.HOURS.toMillis(1), 0L, () -> 100_000_000L);
 
       poller.pollChanges();
     }
@@ -184,14 +237,14 @@ public class TestEntityChangeLogPoller {
   @Test
   void testSkipsPruneBeforeCleanupInterval() {
     EntityChangeLogMapper mapper = mock(EntityChangeLogMapper.class);
-    when(mapper.selectEntityChanges(0L, 500)).thenReturn(List.of());
+    when(mapper.selectEntityChanges(eq(0L), anyLong(), eq(500))).thenReturn(List.of());
 
     try (MockedStatic<SessionUtils> sessionUtils = mockStatic(SessionUtils.class)) {
       mockSessionUtils(sessionUtils, mapper);
 
       EntityChangeLogPoller poller =
           new EntityChangeLogPoller(
-              1, TimeUnit.DAYS.toMillis(1), TimeUnit.HOURS.toMillis(1), () -> 100_000_000L);
+              1, TimeUnit.DAYS.toMillis(1), TimeUnit.HOURS.toMillis(1), 0L, () -> 100_000_000L);
 
       poller.pollChanges();
       poller.pollChanges();
@@ -203,13 +256,13 @@ public class TestEntityChangeLogPoller {
   @Test
   void testDisablesPruneWhenRetentionIsZero() {
     EntityChangeLogMapper mapper = mock(EntityChangeLogMapper.class);
-    when(mapper.selectEntityChanges(0L, 500)).thenReturn(List.of());
+    when(mapper.selectEntityChanges(eq(0L), anyLong(), eq(500))).thenReturn(List.of());
 
     try (MockedStatic<SessionUtils> sessionUtils = mockStatic(SessionUtils.class)) {
       mockSessionUtils(sessionUtils, mapper);
 
       EntityChangeLogPoller poller =
-          new EntityChangeLogPoller(1, 0L, TimeUnit.HOURS.toMillis(1), () -> 100_000_000L);
+          new EntityChangeLogPoller(1, 0L, TimeUnit.HOURS.toMillis(1), 0L, () -> 100_000_000L);
 
       poller.pollChanges();
     }

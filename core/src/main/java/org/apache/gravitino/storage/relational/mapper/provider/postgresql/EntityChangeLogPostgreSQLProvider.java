@@ -27,6 +27,21 @@ import org.apache.ibatis.annotations.Param;
 public class EntityChangeLogPostgreSQLProvider extends EntityChangeLogBaseSQLProvider {
 
   @Override
+  public String selectEntityChanges(
+      @Param("lastConsumedId") long lastConsumedId,
+      @Param("lagMs") long lagMs,
+      @Param("maxRows") int maxRows) {
+    return "SELECT id, metalake_name as metalakeName, entity_type as entityType,"
+        + " entity_full_name as fullName, operate_type as operateType, created_at as createdAt"
+        + " FROM "
+        + ENTITY_CHANGE_LOG_TABLE_NAME
+        + " WHERE id > #{lastConsumedId}"
+        + " AND created_at <= CAST(EXTRACT(EPOCH FROM CURRENT_TIMESTAMP) * 1000 AS BIGINT)"
+        + " - #{lagMs}"
+        + " ORDER BY id LIMIT #{maxRows}";
+  }
+
+  @Override
   public String insertEntityChange(
       @Param("metalakeName") String metalakeName,
       @Param("entityType") String entityType,

@@ -38,8 +38,16 @@ import org.slf4j.LoggerFactory;
  *
  * <p>The poller owns the single high-water mark for a Gravitino server process and dispatches each
  * consumed batch to registered listeners. Listeners should only perform idempotent local cache
- * invalidation. The cursor always advances after dispatch regardless of individual listener
- * failures, so a faulty listener cannot block other listeners or prevent pruning.
+ * invalidation. A failing listener does not block the other listeners in the same cycle, but the
+ * cursor is <b>not</b> advanced past a batch whose dispatch had any listener failure, so the batch
+ * is retried on the next cycle until every listener succeeds. Because invalidation is idempotent,
+ * re-dispatching an already-applied batch to a healthy listener is harmless.
+ *
+ * <p>The poller also applies a lagging high-water mark: it only consumes change rows that are at
+ * least {@code pollLagMs} old (by the database clock). Auto-increment ids become visible at COMMIT
+ * time, so a lower id can commit after a higher id; the lag guarantees every transaction that
+ * started before a consumed row has had time to commit before the cursor moves past it, closing the
+ * commit-ordering gap that would otherwise drop an invalidation permanently.
  */
 public class EntityChangeLogPoller implements AutoCloseable {
 
@@ -52,6 +60,7 @@ public class EntityChangeLogPoller implements AutoCloseable {
   private final long pollIntervalSecs;
   private final long retentionMs;
   private final long cleanupIntervalMs;
+  private final long pollLagMs;
   private final LongSupplier clockMs;
 
   private ScheduledExecutorService scheduler;
@@ -68,6 +77,7 @@ public class EntityChangeLogPoller implements AutoCloseable {
         pollIntervalSecs,
         TimeUnit.DAYS.toMillis(1),
         TimeUnit.HOURS.toMillis(1),
+        TimeUnit.SECONDS.toMillis(1),
         System::currentTimeMillis);
   }
 
@@ -77,20 +87,29 @@ public class EntityChangeLogPoller implements AutoCloseable {
    * @param pollIntervalSecs interval between successive polling cycles
    * @param retentionMs entity change retention in milliseconds, or 0 to disable cleanup
    * @param cleanupIntervalMs interval between successive cleanup attempts in milliseconds
+   * @param pollLagMs lag in milliseconds; only rows older than this (by the DB clock) are consumed,
+   *     or 0 to disable the lag
    */
-  public EntityChangeLogPoller(long pollIntervalSecs, long retentionMs, long cleanupIntervalMs) {
-    this(pollIntervalSecs, retentionMs, cleanupIntervalMs, System::currentTimeMillis);
+  public EntityChangeLogPoller(
+      long pollIntervalSecs, long retentionMs, long cleanupIntervalMs, long pollLagMs) {
+    this(pollIntervalSecs, retentionMs, cleanupIntervalMs, pollLagMs, System::currentTimeMillis);
   }
 
   @VisibleForTesting
   EntityChangeLogPoller(
-      long pollIntervalSecs, long retentionMs, long cleanupIntervalMs, LongSupplier clockMs) {
+      long pollIntervalSecs,
+      long retentionMs,
+      long cleanupIntervalMs,
+      long pollLagMs,
+      LongSupplier clockMs) {
     Preconditions.checkArgument(pollIntervalSecs > 0, "pollIntervalSecs must be positive");
     Preconditions.checkArgument(retentionMs >= 0, "retentionMs must be non-negative");
     Preconditions.checkArgument(cleanupIntervalMs > 0, "cleanupIntervalMs must be positive");
+    Preconditions.checkArgument(pollLagMs >= 0, "pollLagMs must be non-negative");
     this.pollIntervalSecs = pollIntervalSecs;
     this.retentionMs = retentionMs;
     this.cleanupIntervalMs = cleanupIntervalMs;
+    this.pollLagMs = pollLagMs;
     this.clockMs = clockMs;
   }
 
@@ -183,22 +202,31 @@ public class EntityChangeLogPoller implements AutoCloseable {
     }
 
     List<EntityChangeRecord> dispatchedChanges = Collections.unmodifiableList(changes);
+    boolean allListenersSucceeded = true;
     for (EntityChangeLogListener listener : listeners) {
       try {
         listener.onEntityChange(dispatchedChanges);
       } catch (Exception e) {
+        allListenersSucceeded = false;
         LOG.warn("Entity change listener {} failed", listener.getClass().getName(), e);
       }
     }
 
-    entityPollHighWaterId = maxSeenId;
+    // Only advance the cursor when every listener applied the batch. A listener failure must not
+    // drop the batch's invalidations: keeping the cursor in place re-dispatches the same batch on
+    // the next cycle until all listeners succeed. Listeners are idempotent, so re-dispatching to an
+    // already-applied listener is harmless.
+    if (allListenersSucceeded) {
+      entityPollHighWaterId = maxSeenId;
+    }
     pruneExpiredChangesIfNeeded();
   }
 
   private List<EntityChangeRecord> fetchEntityChanges() {
     return SessionUtils.getWithoutCommit(
         EntityChangeLogMapper.class,
-        m -> m.selectEntityChanges(entityPollHighWaterId, ENTITY_CHANGE_POLLER_MAX_ROWS));
+        m ->
+            m.selectEntityChanges(entityPollHighWaterId, pollLagMs, ENTITY_CHANGE_POLLER_MAX_ROWS));
   }
 
   private static boolean handleInterruptIfAny(Throwable e, String context) {

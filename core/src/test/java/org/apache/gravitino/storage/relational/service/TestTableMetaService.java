@@ -76,7 +76,7 @@ public class TestTableMetaService extends TestJDBCBackend {
 
   private List<EntityChangeRecord> listEntityChanges(long lastConsumedId) {
     return SessionUtils.doWithCommitAndFetchResult(
-        EntityChangeLogMapper.class, mapper -> mapper.selectEntityChanges(lastConsumedId, 100));
+        EntityChangeLogMapper.class, mapper -> mapper.selectEntityChanges(lastConsumedId, 0L, 100));
   }
 
   @TestTemplate

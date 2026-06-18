@@ -183,7 +183,7 @@ public class TestJcasbinAuthorizer {
     when(ownerMetaMapper.selectChangedOwners(anyLong(), anyLong()))
         .thenReturn(Collections.emptyList());
     when(entityChangeLogMapper.selectMaxChangeId()).thenReturn(0L);
-    when(entityChangeLogMapper.selectEntityChanges(anyLong(), anyInt()))
+    when(entityChangeLogMapper.selectEntityChanges(anyLong(), anyLong(), anyInt()))
         .thenReturn(Collections.emptyList());
 
     // The change poller probes entity_change_log + owner_meta on startup and owner lookups go via

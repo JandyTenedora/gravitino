@@ -51,8 +51,10 @@ public class EntityChangeLogSQLProviderFactory {
   static class EntityChangeLogH2Provider extends EntityChangeLogBaseSQLProvider {}
 
   public static String selectEntityChanges(
-      @Param("lastConsumedId") long lastConsumedId, @Param("maxRows") int maxRows) {
-    return getProvider().selectEntityChanges(lastConsumedId, maxRows);
+      @Param("lastConsumedId") long lastConsumedId,
+      @Param("lagMs") long lagMs,
+      @Param("maxRows") int maxRows) {
+    return getProvider().selectEntityChanges(lastConsumedId, lagMs, maxRows);
   }
 
   public static String selectMaxChangeId() {
