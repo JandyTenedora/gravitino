@@ -43,11 +43,13 @@ import org.slf4j.LoggerFactory;
  * is retried on the next cycle until every listener succeeds. Because invalidation is idempotent,
  * re-dispatching an already-applied batch to a healthy listener is harmless.
  *
- * <p>The poller also applies a lagging high-water mark: it only consumes change rows that are at
- * least {@code pollLagMs} old (by the database clock). Auto-increment ids become visible at COMMIT
- * time, so a lower id can commit after a higher id; the lag guarantees every transaction that
- * started before a consumed row has had time to commit before the cursor moves past it, closing the
- * commit-ordering gap that would otherwise drop an invalidation permanently.
+ * <p>The poller also applies a lagging high-water mark: it only consumes change rows whose {@code
+ * created_at} is at least {@code pollLagMs} in the past (by the database clock). Auto-increment ids
+ * are assigned at INSERT but become visible at COMMIT, so a lower id can commit after a higher id
+ * and be skipped by an id-only cursor. Because a smaller-id row was necessarily inserted no later,
+ * waiting until a row is {@code pollLagMs} old gives that row's inserting transaction time to
+ * commit before the cursor moves past it. As long as {@code pollLagMs} exceeds the longest write
+ * transaction, this prevents the commit-ordering gap from dropping an invalidation permanently.
  */
 public class EntityChangeLogPoller implements AutoCloseable {
 
@@ -106,6 +108,13 @@ public class EntityChangeLogPoller implements AutoCloseable {
     Preconditions.checkArgument(retentionMs >= 0, "retentionMs must be non-negative");
     Preconditions.checkArgument(cleanupIntervalMs > 0, "cleanupIntervalMs must be positive");
     Preconditions.checkArgument(pollLagMs >= 0, "pollLagMs must be non-negative");
+    // A row becomes eligible for polling once it is pollLagMs old and eligible for pruning once it
+    // is retentionMs old. If cleanup is enabled (retentionMs > 0) but retentionMs is not strictly
+    // greater than pollLagMs, a row could be pruned before it is ever polled, silently dropping its
+    // invalidation.
+    Preconditions.checkArgument(
+        retentionMs == 0 || retentionMs > pollLagMs,
+        "retentionMs must be greater than pollLagMs when cleanup is enabled");
     this.pollIntervalSecs = pollIntervalSecs;
     this.retentionMs = retentionMs;
     this.cleanupIntervalMs = cleanupIntervalMs;

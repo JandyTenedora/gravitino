@@ -59,6 +59,25 @@ public class TestEntityChangeLogPoller {
   }
 
   @Test
+  void testRejectsRetentionNotGreaterThanLag() {
+    // When cleanup is enabled, retentionMs must exceed pollLagMs so a row is never pruned before it
+    // becomes eligible for polling.
+    Assertions.assertThrows(
+        IllegalArgumentException.class,
+        () ->
+            new EntityChangeLogPoller(
+                1, TimeUnit.SECONDS.toMillis(5), TimeUnit.HOURS.toMillis(1), 5_000L));
+    Assertions.assertThrows(
+        IllegalArgumentException.class,
+        () ->
+            new EntityChangeLogPoller(
+                1, TimeUnit.SECONDS.toMillis(5), TimeUnit.HOURS.toMillis(1), 10_000L));
+    // retentionMs == 0 disables cleanup, so the lag may be anything.
+    Assertions.assertDoesNotThrow(
+        () -> new EntityChangeLogPoller(1, 0L, TimeUnit.HOURS.toMillis(1), 10_000L));
+  }
+
+  @Test
   void testPollChangesDispatchesSameBatchToAllListenersAndAdvancesCursor() {
     EntityChangeLogMapper mapper = mock(EntityChangeLogMapper.class);
     EntityChangeRecord first = change(1L, "CATALOG", "ml1.cat1");

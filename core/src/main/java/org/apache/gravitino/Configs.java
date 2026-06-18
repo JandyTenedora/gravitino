@@ -218,11 +218,13 @@ public class Configs {
       new ConfigBuilder("gravitino.entityChangeLog.pollLagSecs")
           .doc(
               "The lag in seconds applied to the entity change log poller. The poller only consumes"
-                  + " change rows older than this lag (measured by the database clock), so all"
-                  + " transactions that started before a consumed row have already committed. This"
-                  + " closes the auto-increment id commit-ordering gap where a lower id may commit"
-                  + " after a higher id. The value should exceed the longest expected write"
-                  + " transaction duration. Set 0 to disable the lag.")
+                  + " change rows whose created_at is at least this many seconds in the past"
+                  + " (measured by the database clock). Auto-increment ids are assigned at INSERT but"
+                  + " become visible at COMMIT, so a lower id may commit after a higher id and be"
+                  + " skipped by an id-only cursor. Waiting until a row is this old gives the"
+                  + " inserting transaction of any earlier (smaller-id) row time to commit before the"
+                  + " cursor advances past it, reducing missed invalidations. The value should exceed"
+                  + " the longest expected write transaction duration. Set 0 to disable the lag.")
           .version(ConfigConstants.VERSION_1_4_0)
           .longConf()
           .checkValue(value -> value >= 0, ConfigConstants.NON_NEGATIVE_NUMBER_ERROR_MSG)

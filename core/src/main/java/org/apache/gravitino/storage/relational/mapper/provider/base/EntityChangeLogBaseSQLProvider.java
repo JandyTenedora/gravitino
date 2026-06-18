@@ -39,12 +39,14 @@ public class EntityChangeLogBaseSQLProvider {
    * <p>The {@code created_at <= dbNowMs - lagMs} predicate applies a lagging high-water mark.
    * Auto-increment ids are assigned at INSERT time but become visible at COMMIT time, so a lower id
    * can commit after a higher id; advancing the cursor purely by the largest committed id can step
-   * over a not-yet-committed lower id and lose its invalidation forever. By only consuming rows
-   * that are at least {@code lagMs} old (measured by the database clock, so there is no app/DB
-   * clock skew), every transaction that started before a consumed row has had at least {@code
-   * lagMs} to commit. As long as {@code lagMs} exceeds the longest write transaction, no lower id
-   * can appear after the cursor has advanced. The cutoff is computed with the same DB-millis
-   * expression used by {@link #insertEntityChange} so {@code created_at} values are comparable.
+   * over a not-yet-committed lower id and lose its invalidation forever. A smaller-id row was
+   * necessarily inserted no later than a larger-id row, so by only consuming rows whose {@code
+   * created_at} is at least {@code lagMs} in the past (measured by the database clock, so there is
+   * no app/DB clock skew), that smaller-id row's inserting transaction has had at least {@code
+   * lagMs} to commit. As long as {@code lagMs} exceeds the longest write transaction, no smaller id
+   * can still commit after the cursor has advanced past a consumed row. The cutoff is computed with
+   * the same DB-millis expression used by {@link #insertEntityChange} so {@code created_at} values
+   * are comparable.
    */
   public String selectEntityChanges(
       @Param("lastConsumedId") long lastConsumedId,
