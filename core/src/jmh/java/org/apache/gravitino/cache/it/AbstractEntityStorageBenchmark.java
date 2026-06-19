@@ -22,6 +22,7 @@ package org.apache.gravitino.cache.it;
 import static org.apache.gravitino.Configs.DEFAULT_ENTITY_RELATIONAL_STORE;
 import static org.apache.gravitino.Configs.ENTITY_CHANGE_LOG_CLEANUP_INTERVAL_SECS;
 import static org.apache.gravitino.Configs.ENTITY_CHANGE_LOG_POLL_INTERVAL_SECS;
+import static org.apache.gravitino.Configs.ENTITY_CHANGE_LOG_POLL_LAG_SECS;
 import static org.apache.gravitino.Configs.ENTITY_CHANGE_LOG_RETENTION_SECS;
 import static org.apache.gravitino.Configs.ENTITY_RELATIONAL_JDBC_BACKEND_DRIVER;
 import static org.apache.gravitino.Configs.ENTITY_RELATIONAL_JDBC_BACKEND_MAX_CONNECTIONS;
@@ -296,6 +297,7 @@ public class AbstractEntityStorageBenchmark<E extends Entity & HasIdentifier> {
     Mockito.when(config.get(ENTITY_CHANGE_LOG_POLL_INTERVAL_SECS)).thenReturn(3L);
     Mockito.when(config.get(ENTITY_CHANGE_LOG_RETENTION_SECS)).thenReturn(24 * 60 * 60L);
     Mockito.when(config.get(ENTITY_CHANGE_LOG_CLEANUP_INTERVAL_SECS)).thenReturn(60 * 60L);
+    Mockito.when(config.get(ENTITY_CHANGE_LOG_POLL_LAG_SECS)).thenReturn(1L);
     Mockito.when(config.get(VERSION_RETENTION_COUNT)).thenReturn(1L);
     // Fix cache config for test
     Mockito.when(config.get(Configs.CACHE_ENABLED)).thenReturn(CACHE_ENABLED);

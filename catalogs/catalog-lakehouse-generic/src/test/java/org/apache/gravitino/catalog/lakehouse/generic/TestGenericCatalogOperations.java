@@ -21,6 +21,7 @@ package org.apache.gravitino.catalog.lakehouse.generic;
 import static org.apache.gravitino.Configs.DEFAULT_ENTITY_RELATIONAL_STORE;
 import static org.apache.gravitino.Configs.ENTITY_CHANGE_LOG_CLEANUP_INTERVAL_SECS;
 import static org.apache.gravitino.Configs.ENTITY_CHANGE_LOG_POLL_INTERVAL_SECS;
+import static org.apache.gravitino.Configs.ENTITY_CHANGE_LOG_POLL_LAG_SECS;
 import static org.apache.gravitino.Configs.ENTITY_CHANGE_LOG_RETENTION_SECS;
 import static org.apache.gravitino.Configs.ENTITY_RELATIONAL_JDBC_BACKEND_DRIVER;
 import static org.apache.gravitino.Configs.ENTITY_RELATIONAL_JDBC_BACKEND_MAX_CONNECTIONS;
@@ -110,6 +111,7 @@ public class TestGenericCatalogOperations {
     when(config.get(ENTITY_CHANGE_LOG_POLL_INTERVAL_SECS)).thenReturn(3L);
     when(config.get(ENTITY_CHANGE_LOG_RETENTION_SECS)).thenReturn(24 * 60 * 60L);
     when(config.get(ENTITY_CHANGE_LOG_CLEANUP_INTERVAL_SECS)).thenReturn(60 * 60L);
+    when(config.get(ENTITY_CHANGE_LOG_POLL_LAG_SECS)).thenReturn(1L);
     Mockito.when(config.get(Configs.CACHE_ENABLED)).thenReturn(false);
 
     store = EntityStoreFactory.createEntityStore(config);
