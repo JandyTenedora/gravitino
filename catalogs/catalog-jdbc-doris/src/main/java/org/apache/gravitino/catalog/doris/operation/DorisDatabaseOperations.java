@@ -43,6 +43,7 @@ public class DorisDatabaseOperations extends JdbcDatabaseOperations {
   @Override
   public String generateCreateDatabaseSql(
       String databaseName, String comment, Map<String, String> properties) {
+    validateBacktickQuotedIdentifier(databaseName);
     StringBuilder sqlBuilder = new StringBuilder();
 
     // Append database name

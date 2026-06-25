@@ -18,8 +18,10 @@
  */
 package org.apache.gravitino.catalog.postgresql.operation;
 
+import static org.apache.gravitino.catalog.postgresql.PostgreSqlCatalogCapability.POSTGRESQL_NAME_PATTERN;
 import static org.apache.gravitino.catalog.postgresql.operation.PostgreSqlTableOperations.PG_QUOTE;
 
+import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableSet;
 import java.sql.Connection;
 import java.sql.DatabaseMetaData;
@@ -93,6 +95,10 @@ public class PostgreSqlSchemaOperations extends JdbcDatabaseOperations {
   @Override
   public String generateCreateDatabaseSql(
       String schema, String comment, Map<String, String> properties) {
+    Preconditions.checkArgument(
+        schema != null && schema.matches(POSTGRESQL_NAME_PATTERN),
+        "Invalid schema name: %s",
+        schema);
     if (MapUtils.isNotEmpty(properties)) {
       throw new UnsupportedOperationException(
           "PostgreSQL does not support properties on database create.");
@@ -135,6 +141,10 @@ public class PostgreSqlSchemaOperations extends JdbcDatabaseOperations {
 
   @Override
   public String generateDropDatabaseSql(String schema, boolean cascade) {
+    Preconditions.checkArgument(
+        schema != null && schema.matches(POSTGRESQL_NAME_PATTERN),
+        "Invalid schema name: %s",
+        schema);
     StringBuilder sqlBuilder =
         new StringBuilder(String.format("DROP SCHEMA %s%s%s", PG_QUOTE, schema, PG_QUOTE));
     if (cascade) {

@@ -154,6 +154,7 @@ public abstract class JdbcDatabaseOperations implements DatabaseOperation {
    */
   protected String generateCreateDatabaseSql(
       String databaseName, String comment, Map<String, String> properties) {
+    validateBacktickQuotedIdentifier(databaseName);
     String createDatabaseSql = String.format("CREATE DATABASE `%s`", databaseName);
     if (MapUtils.isNotEmpty(properties)) {
       throw new UnsupportedOperationException("Properties are not supported yet.");

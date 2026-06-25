@@ -18,6 +18,9 @@
  */
 package org.apache.gravitino.catalog.hologres.operation;
 
+import static org.apache.gravitino.catalog.hologres.HologresCatalogCapability.HOLOGRES_NAME_PATTERN;
+
+import com.google.common.base.Preconditions;
 import com.google.common.collect.ImmutableSet;
 import java.sql.Connection;
 import java.sql.DatabaseMetaData;
@@ -96,6 +99,8 @@ public class HologresSchemaOperations extends JdbcDatabaseOperations {
   @Override
   public String generateCreateDatabaseSql(
       String schema, String comment, Map<String, String> properties) {
+    Preconditions.checkArgument(
+        schema != null && schema.matches(HOLOGRES_NAME_PATTERN), "Invalid schema name: %s", schema);
     if (MapUtils.isNotEmpty(properties)) {
       throw new UnsupportedOperationException(
           "Hologres does not support properties on schema create.");
@@ -128,6 +133,8 @@ public class HologresSchemaOperations extends JdbcDatabaseOperations {
 
   @Override
   public String generateDropDatabaseSql(String schema, boolean cascade) {
+    Preconditions.checkArgument(
+        schema != null && schema.matches(HOLOGRES_NAME_PATTERN), "Invalid schema name: %s", schema);
     StringBuilder sqlBuilder = new StringBuilder(String.format("DROP SCHEMA \"%s\"", schema));
     if (cascade) {
       sqlBuilder.append(" CASCADE");

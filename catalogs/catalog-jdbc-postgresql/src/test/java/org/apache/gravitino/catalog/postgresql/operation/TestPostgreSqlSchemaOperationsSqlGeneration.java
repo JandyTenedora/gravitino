@@ -16,36 +16,31 @@
  * specific language governing permissions and limitations
  * under the License.
  */
-package org.apache.gravitino.catalog.doris.operation;
+package org.apache.gravitino.catalog.postgresql.operation;
 
-import java.util.Collections;
 import org.junit.jupiter.api.Assertions;
 import org.junit.jupiter.api.Test;
 
-public class TestDorisDatabaseOperationsSqlGeneration {
+public class TestPostgreSqlSchemaOperationsSqlGeneration {
 
   @Test
-  public void testGenerateCreateDatabaseSqlValidatesDatabaseName() {
-    DorisDatabaseOperations operations = new DorisDatabaseOperations();
+  public void testGenerateCreateDatabaseSqlValidatesSchemaName() {
+    PostgreSqlSchemaOperations operations = new PostgreSqlSchemaOperations();
 
-    Assertions.assertEquals(
-        "CREATE DATABASE `test_db` PROPERTIES (\n\"comment\"=\"comment\"\n)",
-        operations.generateCreateDatabaseSql("test_db", "comment", Collections.emptyMap()));
     Assertions.assertThrows(
         IllegalArgumentException.class,
-        () ->
-            operations.generateCreateDatabaseSql(
-                "db`; DROP TABLE users; --", "comment", Collections.emptyMap()));
+        () -> operations.generateCreateDatabaseSql("schema\"; DROP TABLE users; --", null, null));
   }
 
   @Test
-  public void testGenerateDropDatabaseSqlValidatesDatabaseName() {
-    DorisDatabaseOperations operations = new DorisDatabaseOperations();
+  public void testGenerateDropDatabaseSqlValidatesSchemaName() {
+    PostgreSqlSchemaOperations operations = new PostgreSqlSchemaOperations();
 
     Assertions.assertEquals(
-        "DROP DATABASE `test_db` FORCE", operations.generateDropDatabaseSql("test_db", true));
+        "DROP SCHEMA \"test_schema\" CASCADE",
+        operations.generateDropDatabaseSql("test_schema", true));
     Assertions.assertThrows(
         IllegalArgumentException.class,
-        () -> operations.generateDropDatabaseSql("db`; DROP TABLE users; --", true));
+        () -> operations.generateDropDatabaseSql("schema\"; DROP TABLE users; --", true));
   }
 }

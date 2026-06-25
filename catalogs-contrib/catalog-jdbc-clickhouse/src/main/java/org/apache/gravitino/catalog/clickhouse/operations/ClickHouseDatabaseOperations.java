@@ -92,6 +92,7 @@ public class ClickHouseDatabaseOperations extends JdbcDatabaseOperations {
   @Override
   protected String generateCreateDatabaseSql(
       String databaseName, String comment, Map<String, String> properties) {
+    validateBacktickQuotedIdentifier(databaseName);
 
     String originComment = StringIdentifier.removeIdFromComment(comment);
     if (!supportSchemaComment() && StringUtils.isNotEmpty(originComment)) {
@@ -104,6 +105,7 @@ public class ClickHouseDatabaseOperations extends JdbcDatabaseOperations {
 
     if (onCluster(properties)) {
       String clusterName = properties.get(ClusterConstants.CLUSTER_NAME);
+      validateBacktickQuotedIdentifier(clusterName);
       createDatabaseSql.append(String.format(" ON CLUSTER `%s`", clusterName));
       // Embed the cluster name into the COMMENT so it can be retrieved later (e.g., at DROP time).
       // ClickHouse does not persist ON CLUSTER info in SHOW CREATE DATABASE for Atomic databases.

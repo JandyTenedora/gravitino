@@ -101,6 +101,26 @@ public class TestClickHouseDatabaseOperations {
         "CREATE DATABASE `db_name` ON CLUSTER `ck_cluster` COMMENT '" + expectedComment + "'", sql);
   }
 
+  @Test
+  void testGenerateCreateDatabaseSqlValidatesClusterName() {
+    Map<String, String> properties = new HashMap<>();
+    properties.put(ClusterConstants.CLUSTER_NAME, "ck`; DROP TABLE users; --");
+    properties.put(ClusterConstants.ON_CLUSTER, "true");
+
+    Assertions.assertThrows(
+        IllegalArgumentException.class,
+        () -> newOps().buildCreateSql("db_name", "my comment", properties));
+  }
+
+  @Test
+  void testGenerateCreateDatabaseSqlValidatesDatabaseName() {
+    Assertions.assertThrows(
+        IllegalArgumentException.class,
+        () ->
+            newOps()
+                .buildCreateSql("db`; DROP TABLE users; --", "my comment", Collections.emptyMap()));
+  }
+
   // ---------------------------------------------------------------------------
   // DROP DATABASE SQL generation
   // ---------------------------------------------------------------------------
