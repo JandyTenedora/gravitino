@@ -106,7 +106,7 @@ public class PostgreSqlSchemaOperations extends JdbcDatabaseOperations {
           .append(schema)
           .append(PG_QUOTE)
           .append(" IS '")
-          .append(comment)
+          .append(comment.replace("'", "''"))
           .append("'");
     }
     return sqlBuilder.toString();
